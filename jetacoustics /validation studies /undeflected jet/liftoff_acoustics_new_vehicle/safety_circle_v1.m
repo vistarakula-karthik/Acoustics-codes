@@ -1,0 +1,729 @@
+
+% ==========================
+%  Liftoff acoustic code
+% ==========================
+
+clc;
+clear;
+close all;
+n = 19;                   %number of nozzles (7)
+F = 54900;                % thrust developed by each engine in N. (25830)          54900 - current vehicle thrust
+ue = 3100;               %velocity at the exit of the engine in m/s. (3131)
+Me = 3.7;                  % mach number at exit.(3.776)
+ae = ue/Me;               %speed of sound at the exit in m/s.
+dei = 0.410;                  %nozzle exit diameter in m. (0.2234)            % Vehicle Length in m. (18.75)                 %vehicle dia in m.(1.3)
+x2 = 7;                   %Impingement Distance in m(5*dei)
+angle = 25;                %uplift angle in deg(0)
+L = 70;
+
+% =======================
+% Base Stand Dimensions
+% =======================
+
+
+Length = 4.5;                      %length of base stand. (8)
+Width = 13.3;                         % width of base stand. (10)
+Height = 4.5;                         %Height of base stand.(4)
+BS_offset = 0;                      % Offset of the base-stand wrt to the nozzle (origin)
+BS=[Length/2, Width/2, BS_offset]; 
+
+de=dei*(n)^0.5;                     % equivalent exit diameter of all the engines.
+
+% ----------------------------------------------------------- 
+    xt=1.75*de*(1+(0.38*Me))^2;       % core length at exit.     This the modification-1
+% -----------------------------------------------------------
+
+if xt >=x2
+    xt = x2;
+else
+    xt = min(xt, x2);                   % Ensure xt does not exceed x2
+end
+
+
+%% 
+
+% 2D mic locations
+
+x_vals = -4000:400:4000;          % Along the X-axis (distance from nozzle)
+y_vals = -4000:400:4000;         % Along the Y-axis (perpendicular to nozzle axis)
+
+% Create grid using meshgrid
+[X_cord, Y_cord] = meshgrid(x_vals, y_vals);
+
+% Flatten the grids and create mic_locations with Z = 0
+mic_locations = [X_cord(:), Y_cord(:), zeros(numel(X_cord), 1)];
+
+% Nozzle location remains at origin
+nozzle_location = [0 0 0];
+
+
+%%
+
+maximum=zeros(1,20);
+mod_s=[];
+SPL=[];
+SPLOA=[];
+x1_1=[];
+npsl=[];
+Lwsb_1=[];
+npsl_1=[];
+theta1=[];
+W_oa=0.005*n*F*ue;              % overall acoustic power considering acoustic efficiency to be 1 percent
+Lw=10*log10(W_oa)+120;          % overall acoustic power in dB.
+ 
+%%
+
+x=0:0.05:5;                % Axial position(x1/xt), the upper limit is consider based on the data available in the graph(refer NASA-sp8072)
+delta_x=0.1*xt;
+NAPPUCL=-0.1167*x.^6+1.7081*x.^5-9.6015*x.^4+26.812*x.^3-42.963*x.^2+x.*40.89-21.617;      %Normalised Acoustic Power Per Unit Core Length.       
+Lws=((NAPPUCL))+Lw+10*log10(delta_x/xt);                                                   %overall acoustic power for each slice.
+T_atm=273.15+25;                                                                           %considering atmospheric temperature to be 25'C.
+ao=sqrt(1.2259*287*T_atm);
+
+%%
+
+% ===============================
+%   1/3rd octave band frequency
+% =============================== 
+
+nf=27;                              %total number of frequencies considered
+f=ones(nf,1);
+n = 3;                     % for 1/3 ocatve n = 3
+f(1)=20;                            % initially it was 20
+for i=2:nf
+f(i)=f(i-1).*(2.^(1/n));             %1/3 octave band frequencies
+end
+f_signal = f;
+f=f';
+stn=f.*de/ue;
+f_lr=f.*(2.^(-1/2*n));
+f_up=f.*(2.^(1/2*n));
+delta_f=f_up-f_lr;                     %bandwidth of the frequencies.
+%% 
+
+[TL,Com,f_c,f_natural] = Transmission_loss(f);
+
+% sprintf("The compliance is %f",Com)
+% sprintf("The compliance is %f",f_c)
+
+figure("Name","TL")
+plot(f_signal,TL,"-o","Color","b","MarkerFaceColor","b")
+grid on
+xlabel("Frequency(in Hz)");
+ylabel("Transmission Loss (in dB)")
+legend("AutoUpdate","on")
+
+frequency_iso = [63 125 250 500 1000 2000 4000 8000];
+alpha_iso = [0.1 0.3 1 3.1 7.4 12.7 23.1 59.3];
+[fitresult, gof] = createFit_atm(frequency_iso, alpha_iso)
+alpha_atm = fitresult(f_signal);                % Atmospheric absorption coefficient
+alpha_fol = 0.0054*f.^(0.3489);                % Foilage loss coefficient
+TL_Fol = L*alpha_fol;                          % Loss due to foilage
+alpha_atm_1 = 0.0006*f.^(1.2901);        
+
+%% Directivity of far field noise for std chemical Rockets for several values of strouhal Number
+
+deg=[19.81388825 19.94741591	20.10699147	20.11036367	20.23184273	20.32279569	20.72972252	21.1734303	21.19243423	21.3788545	21.4868195	21.51132432	22.04885094	22.16203171	22.19763611	22.47615652	22.76751729	22.97975813	23.07769657	23.08929291	23.57218893	23.72384619	23.8938094	23.94043354	24.1749247	24.72756509	24.90383871	24.93641034	25.03135657	25.18939361	25.71159142	25.71308931	25.88120098	26.05365093	26.30775389	26.86716026	26.89508851	26.9287751	27.03561999	27.59059734	27.73502868	27.81149993	28.02166629	28.2541033	28.88802834	28.93793501	29.17440434	29.2404933	29.47336973	30.10747573	30.28597038	30.52431566	30.5935051	30.75717904	31.26280621	31.6343902	31.87192743	32.01669949	32.17005036	32.48184641	33.04808025	33.09242047	33.44576734	33.58320646	33.70033407	34.31180111	34.46205507	34.87501318	34.99686091	35.04868981	35.4673078	35.87610109	35.89466777	36.10086461	36.41133409	36.46334097	37.00905367	37.29078785	37.34564247	37.82609205	37.88000081	38.31247103	38.50712835	38.59189422	39.24152634	39.29844557	39.71026022	39.86222718	39.96297441	40.65742339	40.71993131	40.8690264	40.93891894	41.2784802	41.87619068	42.07364081	42.14209339	42.54214767	42.6284908	42.74486442	43.49064136	43.56681844	43.73181768	43.8016701	43.96077804	44.6163033	44.90707236	44.99481839	45.27101372	45.38260958	46.06062123	46.32403731	46.38168146	46.6867938	46.80320541	47.35014762	47.40219222	47.73343901	48.10775576	48.27449993	48.310935	48.84359317	49.16070817	49.52892114	49.63638066	49.65133842	50.02946832	50.61144222	50.95033568	51.00170182	51.07805689	51.42862149	51.99878509	52.30209922	52.37328089	52.48937145	52.70108708	53.38721754	53.51745001	53.60272207	53.79715162	54.20971816	54.71203969	54.74178503	55.03292902	55.22476001	55.57555192	55.85340267	55.9224988	56.39818967	56.65044617	56.87648564	57.03926966	57.56983949	57.76369949	58.16605798	58.17706696	58.46264204	58.96613459	59.12927339	59.39844785	59.54250559	59.88505329	60.42836677	60.42973724	60.5299928	60.90721093	61.28213389	61.5845957	61.73024025	61.8576838	62.24939162	62.27217257	62.78605463	63.03086072	63.28692963	63.65400351	63.83194285	64.10794141	64.16033194	64.58647667	64.8099077	65.08182547	65.37186794	65.58569773	65.75664527	65.78744834	66.51107131	66.73739556	67.01163307	67.02360426	67.05701894	67.94010357	68.03837834	68.25969926	68.3583735	68.65376537	69.33959051	69.36977657	69.46523375	69.49590304	69.86578193	70.17453644	70.5722789	70.66704294	70.80080224	71.29349711	71.35658793	71.52990415	71.74331765	72.0354628	72.52837392	72.68520418	72.7211055	72.97949532	73.27221466	73.82899439	73.98635702	74.14971059	74.28038989	74.63777076	75.19305187	75.22274847	75.5782089	75.58140193	76.00323431	76.32905944	76.49434314	76.81720979	77.0067072	77.40634025	77.43283612	77.56682947	78.05287842	78.43445798	78.62373605	78.86229553	78.86893789	79.35338143	79.79921671	79.93146481	80.0979706	80.23430177	80.7186314	81.16277227	81.17476838	81.26926712	81.66433073	82.13201583	82.14880275	82.60351586	82.6339511	83.03091558	83.34833672	83.57861813	84.0339008	84.06312575	84.33145774	84.75652706	85.00825554	85.36201622	85.46271948	85.69659024	85.90425467	86.43799973	86.66354085	86.8920721	87.12622764	87.39925486	87.86770832	88.09321385	88.32092638	88.49100773	88.82889226	89.29706095	89.52285125	89.74938908	89.85674894	90.25856526	90.72634239	90.95220388	91.17767381	91.28410815	91.55921975	92.15498308	92.38102256	92.60570936	92.71193011	92.8585176	93.58355258	93.80962765	94.03353132	94.13936052	94.22319802	95.0118373	95.23812596	95.4612465	95.56782322	95.58807779	96.44012203	96.66601912	96.88946003	96.995574	97.01661169	97.86819317	98.09455302	98.31738879	98.4230044	98.4450744	99.29597954	99.52265976	99.74417845	99.85061279	99.97489692	100.7231964	100.9505173	101.1700782	101.2779364	101.320365	102.1504844	102.3779121	102.5968679	102.7049396	102.7319576	103.5441436	103.5775944	104.0233371	104.0477736	104.1309106	104.158854	105.0047044	105.3605297	105.45002	105.4844263	106.0569012	106.1990496	106.4319213	106.6472428	106.8764893	107.1691754	107.2043461	107.8588533	108.0865302	108.240417	108.302745	108.3825654	109.2851802	109.453807	109.5133555	109.7289651	109.7629544	110.6145059	110.7115783	110.9354329	110.9395044	111.1549717	112.0409396	112.137925	112.3326551	112.3663297	112.5810138	113.4675513	113.5641965	113.7588752	113.7928132	114.0069135	114.8943054	114.9905234	115.1864836	115.3094886	115.4325997	116.3741164	116.4167435	116.6130597	116.6454706	116.8583926	117.6344914	117.8429992	118.0394222	118.0718153	118.2839008	118.6729332	119.2690058	119.4658298	119.4981422	119.7093378	120.2074671	120.6955551	120.7809379	120.9237927	121.1349528	121.5833107	122.1213001	122.3174774	122.3499772	122.5602118	122.8366359	123.4827732	123.5475949	123.7755566	124.2262473	124.2680093	124.3998995	124.9735659	125.1282266	125.2012962	125.6529942	126.0983524	126.3984333	126.5839926	126.8343869	127.0670128	127.0770569	127.8240483	128.0530779	128.0646646	128.1501502	128.3920171	129.2493428	129.4787284	129.577182	129.8440346	129.9283512	130.674673	130.904379	131.0005401	131.3526491	132.0740453	132.1310412	132.2585156	132.3297092	132.4280275	133.2218896	133.4356244	133.5729975	133.7550394	133.8538204	134.6770783	134.9505212	134.9979717	135.180934	135.2788658	135.8890029	136.375709	136.4229104	136.6582606	136.7035197	136.7937575	137.8008968	137.8477422	137.9085584	138.1283871	138.2189097	139.2259423	139.2724316	139.4558974	139.5539309	139.6433144	140.6510233	140.6973703	140.8810496	141.0044209	141.0692141	142.0760687	142.1220953	142.3062018	142.4031538	142.4937968	143.5012209	143.5466068	143.731176	143.830135	143.9183082	144.9260172	144.9536616	144.9713674	145.1559367	145.2548601	146.3507066	146.3959857	146.507546	146.5809109	146.6800123	147.5246509	147.775574	147.8205328	148.0055292	148.1047374	149.2001109	149.2450086	149.4302542	149.4619717	149.5296404	150.6250241	150.6694489	150.8548013	150.9545078	151.817769	152.0497492	152.093818	152.2797043	152.3791617	153.4743674	153.5021329	153.5182583	153.7043582	153.8037443	154.6020968	154.8989501	154.9424849	155.1289052	155.2283982	156.0911977	156.3231768	156.3668184	156.5535235	156.6529453	157.7021793	157.7480442	157.7911875	157.9781417	158.0772787	159.1726981	159.215521	159.4020989	159.4025108	159.5016834	160.5970672	160.6397833	160.8269511	160.8820905	160.9259101	162.0215786	162.06401	162.2515338	162.3065664	162.3499944	163.4456985	163.4882367	163.6760096	163.7314694	163.774933	164.8698896	164.9122854	165.1002719	165.1563724	165.1988394	166.1932137	166.2944367	166.3361561	166.5245698	166.6234576	167.7189126	167.7601692	167.9487965	168.0478267	168.2650738	169.1429257	169.1842891	169.372952	169.4720534	169.6878766	170.5677575	170.6080531	170.7972143	170.8961021	171.1111066	171.9921622	172.031995	172.2214054	172.320044	172.404531	173.415321	173.4484058	173.4558301	173.6455609	173.7441283	174.8395477	174.8797008	175.0197812	175.0696096	175.1682126	176.2636676	176.3036427	176.4189051	176.4939431	176.5924037	177.6878587	177.7272999	177.8422063	177.9185969	178.0165592	178.791425	179.1120142	179.2650803	179.3434288	179.4403232	180.0033496	180.082827	180.2496987 20 30 50 60 70 80 90 100 110 120 130 140 150 160 170 180 20 30 50 60 70 80 90 100 110 120 130 140 150 160 170 180];
+di=[-2.220780036	4.015007187	0.265529592	-2.011518879	-1.309874433	-0.465444787	4.437327159	0.693664296	-0.957496395	4.796696112	-1.611685808	-0.098899441	1.094891997	-0.595868646	5.184152041	-1.28758345	0.319353783	1.466175672	5.578473116	-0.245077765	-0.89580768	0.669888876	1.834767675	5.963014219	0.133138455	-0.583227374	6.377158885	1.022119278	2.216709578	0.50515709	6.815892999	1.409984842	-0.198673792	2.593785394	0.864175697	1.776545104	7.198693659	2.969103115	0.153491815	1.249033207	3.291705074	7.528401683	2.125112048	0.528121102	3.702570963	1.638573726	7.890757028	2.485526614	0.870362416	4.037328691	1.999259505	2.829899156	7.984361272	1.215274758	4.351798296	2.344045733	3.208103884	7.908664745	1.566510612	4.703396135	2.661421432	3.499616307	7.590058414	1.905969021	5.077845489	3.837134374	2.967019687	7.264091181	2.224816901	5.425281642	4.144316685	3.26967358	6.955108479	4.196411749	2.509804626	5.702908465	4.509629535	3.545828222	6.62115761	2.783014907	5.897462238	6.333877162	4.680218561	3.843378429	3.028253756	6.018196668	4.922121967	4.077638853	5.883682165	3.254354257	6.01316481	5.190977781	5.640396644	4.289017547	5.345426759	3.467205132	5.980161521	5.46693876	5.161786962	4.48248207	3.647668033	5.841161227	4.772297852	4.678703335	5.57999682	4.560442755	3.851685824	5.566720315	4.831990307	5.560663779	4.239838069	4.033620906	5.323596057	5.062927973	5.592436437	3.937234312	5.025047136	4.117276506	5.079558202	5.531440739	3.623793281	4.92986396	4.284133162	5.08777597	3.315536965	5.368906532	4.637369438	4.405464826	5.085688474	2.961331832	5.147464122	4.390724597	4.476494283	2.620208003	5.020297211	4.850555378	4.155074219	4.566080875	4.608822444	2.269760363	4.916629252	3.885935001	4.491385266	4.444554942	1.904044253	4.658382327	3.510530467	4.191770049	4.430255197	1.552341827	4.479633155	3.147225783	4.430883381	3.86387009	1.190334137	4.281480421	2.798495687	4.347825951	3.564661455	0.825676521	4.122081418	2.439432358	4.304517397	3.210463442	0.481804622	3.940386907	2.11069595	4.24002063	3.844039968	0.136313323	2.881551847	3.604174503	1.771359842	4.03208872	-0.214036171	2.555584613	3.406337201	1.391234032	-0.522904695	3.841878915	2.249629543	1.025100295	3.139257192	-0.840130944	3.676379369	1.950437012	0.676510044	2.813289958	-1.202874725	3.487324934	0.320250724	1.610294637	2.496155808	-1.568207746	-0.033489532	1.229585506	3.263581024	-1.943028154	2.152522407	0.876665904	-0.391728118	3.014996502	-2.272663889	0.516099141	-0.731090733	1.752946142	2.752333036	-2.528902966	-1.012831843	0.180919973	1.458530676	-2.894985659	-1.365097673	2.494086111	-0.176239014	1.077624598	-3.245335154	-1.737464446	2.194618128	-0.537924299	0.713703073	-3.547277874	-2.103464695	1.899566688	-0.90446778	0.353609218	-2.433667732	-3.925369795	-1.246332446	1.604515247	-4.235246442	0.012920178	-2.856682266	-1.582439249	1.3403796	-4.428057027	-0.32188014	-3.26856891	-1.927930548	1.009434921	-4.841679885	-0.658252754	-3.62454066	-2.279191319	0.728249947	-5.111834655	-1.004092964	-3.982895867	0.479515146	-2.643435249	-5.41719136	-1.331946063	-4.389363412	0.175958298	-2.992957373	-5.790268374	-1.654968936	-4.736474109	-0.049627581	-3.335118594	-1.933770452	-6.09856944	-5.082876685	-0.311384687	-3.681696356	-2.321513334	-6.428953216	-5.425037905	-0.684784105	-4.026801938	-2.665146735	-6.738726463	-5.756865893	-1.026945326	-4.357185714	-3.007307956	-7.032305723	-6.128442757	-1.370578727	-4.684625128	-3.337691731	-7.31852408	-6.376384417	-1.722334972	-4.985565291	-3.645992798	-7.594437172	-6.643464426	-2.017984777	-5.283561093	-3.94546078	-7.861517181	-6.894350448	-2.345690659	-5.56977945	-4.240512221	-8.124180648	-7.187929708	-2.681640752	-5.855997807	-4.510536591	-8.407454643	-7.452065355	-2.978164373	-6.13338308	-4.807060212	-8.678951194	-7.702951377	-3.271743633	-6.398990908	-5.085917666	-8.903337964	-7.961198302	-3.600862311	-6.641043846	-5.354469855	-9.090920219	-8.207667782	-3.905905668	-6.886041145	-5.603883696	-9.31530699	-8.440887636	-4.214312999	-5.740248377	-7.123677541	-9.526444135	-5.893608558	-8.631414253	-4.443116312	-7.361313938	-6.045352272	-9.746414364	-4.637852387	-8.985387401	-4.864236816	-7.603366876	-6.231605946	-9.957551509	-4.985868905	-6.440429585	-7.833642369	-6.561790184	-9.289362949	-10.15985557	-5.168212364	-8.038890791	-9.471706408	-6.787649135	-10.36068745	-5.353633422	-9.576406742	-8.247083575	-5.583927104	-6.985536655	-10.55268625	-9.786071706	-8.453149875	-5.818712735	-7.211395606	-10.74615722	-10.00309757	-8.656108239	-6.019544615	-7.423121623	-10.93373948	-10.22601216	-8.861356662	-6.27779154	-7.665261012	-11.11248865	-10.41656209	-9.062188542	-6.493345227	-7.833765686	-11.29565436	-10.5657025	-9.264492603	-6.70006583	-8.039750199	-11.46704263	-10.74842464	-9.4564914	-6.908651195	-8.244998621	-11.63548654	-10.86085255	-9.670937446	-7.094746622	-8.422275612	-11.81129135	-11.11332091	-9.85212185	-7.277534401	-8.621635312	-11.97237435	-11.18972274	-7.375201762	-10.05604268	-8.795967941	-11.40336764	-12.14478615	-7.599388699	-10.2465693	-7.720916114	-8.976925383	-11.6259878	-7.842548203	-10.39145831	-9.159063734	-12.38937524	-7.903573597	-11.73759501	-10.56726312	-9.351353803	-12.50252846	-8.022030636	-11.91757213	-10.72981831	-9.528630794	-8.256428235	-12.75326062	-12.09186508	-10.89384567	-9.705907784	-8.338897962	-12.2131992	-12.95319273	-11.0055253	-12.26953363	-9.869935149	-8.592138304	-12.45169259	-11.21145395	-13.19315026	-10.03396251	-8.775304017	-12.63414072	-11.38003905	-13.34245582	-10.22133446	-8.927553937	-12.75587749	-11.53817769	-13.4902892	-10.30913211	-9.06360987	-12.79558776	-11.69631633	-13.63370603	-10.47093305	-9.208498887	-12.95225422	-11.84856625	-13.77123415	-10.67093363	-9.381359336	-13.07800489	-12.00228835	-13.91906752	-10.82760009	-9.51713202	-13.26558714	-12.15453827	-14.05806782	-10.98426655	-9.64996601	-13.39869871	-12.31120473	-14.18823503	-11.13357211	-9.882274515	-13.52886592	-12.45314939	-13.59644486	-14.3287075	-11.27404458	-10.02127481	-12.5906775	-14.46329126	-13.7331456	-11.42335014	-10.17794127	-13.97303578	-12.73556652	-14.59493065	-11.55793389	-10.31694156	-12.86678529	-14.72362568	-11.69693419	-14.09508657	-10.46330276	-13.01356711	-14.85084853	-11.82857358	-10.60819178	-14.24644931	-13.1525674	-14.97512702	-11.97493478	-10.74424771	-13.28715115	-14.43545204	-15.10234987	-12.11099071	-10.87735928	-14.50315709	-13.42026273	-15.22073963	-12.2426301	-11.01341522	-14.63258113	-13.53865249	-15.34354594	-12.37721385	-11.14505461	-14.88653254	-13.68354151	-15.46782443	-12.51179761	-11.26786092	-13.81959744	-15.59063073	-14.90930932	-12.63607609	-11.39361158	-13.94387593	-15.71049268	-12.76329894	-15.04370673	-11.51200135	-14.07404314	-15.82888245	-12.89641052	-15.17240176	-11.62450239	-14.18801636	-15.94727221	-13.02510555	-15.31876296	-11.77233577	-14.30493395	-16.05830107	-13.14496749	-15.46512416	-11.87747591	-15.59424025	-14.43657334	-16.16196903	-13.26630162	-12.01205966	-14.56526837	-16.27152571	-13.38469138	-12.13633815	-15.77709678	-14.67482505	-16.38549894	-13.50013679	-12.25472792	-15.83659932	-14.81824189	-16.48475036	-13.61999873	-12.36575678	-15.91376802	-14.94399256	-16.59136268	-13.73691632	-12.4723691	-15.96650803	-15.0182169	-16.1054703	-16.69355845	-13.85236172	-12.58487014	-15.13660667	-16.79722641	-16.17779993	-13.96339059	-12.69737119	-15.25057989	-16.90383873	-16.32679987	-14.08619689	-12.81428877	-15.36749748	-16.99867361	-16.40691294	-14.22225283	-12.92973418	-17.07748027	-15.48294288	-16.46935984	-14.36566966	-13.02898559	-17.19921703	-15.553291	-14.43868881 -1.9209    1.0935    4.9027    4.5392    3.8600    2.6246    0.7535   -1.8369   -3.7171   -5.4193 -6.6452   -7.8357   -8.9500   -9.8584  -10.6327  -11.3904 -1.9759    1.0024    4.9028    4.6693    4.6334    4.4114    3.1684    0.1651   -1.8172   -3.6663 -4.7621   -5.9965   -7.1522   -8.0043   -8.6407   -9.2847];
+strn=[0.4	0.004	0.0125	0.4	0.125	0.04	0.004	0.0125	0.125	0.004	0.4	0.04	0.0125	0.125	0.004	0.4	0.04	0.0125	0.004	0.125	0.4	0.04	0.0125	0.004	0.125	0.4	0.004	0.04	0.0125	0.125	0.004	0.04	0.4	0.0125	0.125	0.04	0.004	0.0125	0.4	0.125	0.0125	0.004	0.04	0.4	0.0125	0.125	0.004	0.04	0.4	0.0125	0.125	0.04	0.004	0.4	0.0125	0.125	0.04	0.004	0.4	0.0125	0.125	0.04	0.004	0.4	0.0125	0.04	0.125	0.004	0.4	0.0125	0.04	0.125	0.004	0.04	0.4	0.0125	0.04	0.125	0.004	0.4	0.0125	0.004	0.04	0.125	0.4	0.0125	0.04	0.125	0.004	0.4	0.0125	0.04	0.004	0.125	0.04	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.004	0.125	0.04	0.004	0.4	0.0125	0.125	0.04	0.004	0.4	0.0125	0.125	0.04	0.004	0.0125	0.4	0.125	0.04	0.004	0.0125	0.4	0.125	0.004	0.04	0.0125	0.4	0.125	0.004	0.04	0.0125	0.4	0.004	0.125	0.04	0.0125	0.4	0.04	0.004	0.125	0.0125	0.4	0.04	0.004	0.125	0.0125	0.04	0.4	0.004	0.125	0.0125	0.4	0.04	0.004	0.125	0.0125	0.4	0.04	0.004	0.125	0.0125	0.4	0.04	0.004	0.125	0.0125	0.4	0.125	0.004	0.04	0.125	0.0125	0.4	0.004	0.04	0.125	0.0125	0.004	0.4	0.04	0.0125	0.125	0.004	0.4	0.04	0.0125	0.125	0.004	0.4	0.0125	0.04	0.125	0.004	0.0125	0.04	0.4	0.004	0.125	0.04	0.0125	0.4	0.004	0.04	0.0125	0.125	0.4	0.004	0.0125	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.0125	0.004	0.04	0.4	0.004	0.125	0.0125	0.04	0.4	0.004	0.125	0.0125	0.04	0.4	0.004	0.125	0.0125	0.04	0.4	0.004	0.125	0.0125	0.4	0.04	0.004	0.125	0.0125	0.4	0.04	0.004	0.125	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.04	0.125	0.004	0.0125	0.4	0.125	0.04	0.004	0.125	0.0125	0.4	0.04	0.125	0.004	0.4	0.0125	0.4	0.04	0.125	0.004	0.4	0.125	0.04	0.125	0.0125	0.004	0.4	0.04	0.0125	0.125	0.004	0.4	0.0125	0.04	0.4	0.125	0.004	0.0125	0.04	0.4	0.125	0.004	0.0125	0.04	0.4	0.125	0.004	0.0125	0.04	0.4	0.125	0.004	0.0125	0.04	0.4	0.125	0.004	0.0125	0.04	0.4	0.125	0.004	0.0125	0.04	0.4	0.125	0.004	0.0125	0.04	0.4	0.125	0.004	0.0125	0.04	0.4	0.125	0.004	0.0125	0.4	0.04	0.125	0.0125	0.004	0.4	0.04	0.4	0.125	0.0125	0.4	0.04	0.125	0.004	0.4	0.0125	0.04	0.125	0.004	0.4	0.0125	0.04	0.125	0.4	0.004	0.0125	0.04	0.125	0.4	0.0125	0.004	0.04	0.0125	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.0125	0.004	0.125	0.4	0.04	0.004	0.0125	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.04	0.004	0.125	0.0125	0.4	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.04	0.0125	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.04	0.004	0.0125	0.125	0.4	0.04	0.004	0.125	0.0125	0.4	0.04	0.004	0.125	0.0125	0.4	0.04	0.004	0.125	0.0125	0.4	0.04	0.004	0.125	0.0125	0.4	0.0125	0.04	0.004	0.125	0.4	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.004	0.125	0.4	0.0125	0.04	0.0125	0.004	0.125	0.4	0.04	0.004	0.0125	0.125	0.4	0.04	0.004	0.0125	0.125	0.4	0.04	0.004	0.0125	0.125	0.4	0.004	0.04	0.0125	0.125	0.4	0.004	0.04	0.125 1.25 1.25 1.25 1.25 1.25 1.25 1.25 1.25 1.25 1.25 1.25 1.25 1.25 1.25 1.25 1.25 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4];
+deg=deg';di=di';strn=strn';
+surffit1 = fit([deg,strn],di,'thinplateinterp','normalize','on');
+figure(1);
+plot(surffit1,[deg,strn],di);
+
+%% OASPL Calculations
+
+totSPLbp = zeros(1,nf);
+grms=[];
+f_a=[20,25,31.5,40,50,63,80,100,125,160,200,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150,4000,5000,6300,8000]';
+dBA_corr=[-50.5,-44.7,-39.4,-34.6,-30.2,-26.2,-22.5,-19.1,-16.1,-13.4,-10.9,-8.6,-6.6,-4.8,-3.2,-1.9,-0.8,0,0.6,1,1.2,1.3,1.2,1,0.5,-0.1,-1.1]';
+dba_corr_func=fit(f_a,dBA_corr,'linearinterp');
+
+
+Theta_B=[];
+for x1=1:length(mic_locations)               % first value is at the nose cone.
+    toSPL=zeros(1,nf);
+    x1_1=[];
+    for k=1:100 
+        X1=k*0.05*xt;%axial position from the nozzle exit.
+         if X1 <= x2
+            X = [0 0 -X1];
+        elseif X1>x2
+            X = [0.05*(k - 20)*xt 0 -x2];
+        end                    %axial position from the nozzle exit.
+        x1_1=[(x1_1),X1];
+        npsl=[];
+         X_mag = norm(X);
+          for q=1:nf
+            mod_s_1(q)=f(q)*X_mag*ae/(ao*ue);%modified axial strouhal number
+            b=mod_s_1(q);
+                if mod_s_1(q)<=1.62
+                    NPSL=4.1252*log(b)-7.237;   %Normalized relative power-spectrum level
+                else
+                    NPSL=-9.454*log(b)+1.0368;
+
+                end
+                    npsl=[(npsl),NPSL];
+           end
+                 Lwsb=((npsl))+10*log10((delta_f))+Lws(k)-10*log10(ue*ao/(X_mag*ae));
+                    Lwsb_1=[Lwsb_1;Lwsb];                     %sound-power level in a slice of the rocket-exhaust flow attributed to frequencies in a frequency band centered at frequency b, dB
+                    npsl_1=[(npsl_1);npsl];
+                    mod_s=[(mod_s);mod_s_1];                       %modified strouhal number.
+
+                       if X_mag<x2
+                            A=[0 0 -x2]-X;                         % axial vector b/w impingement point and slice center
+                            B=mic_locations(x1,:) -X;             % axial vector b/w mic loc and slice center
+                            vec = norm(B);
+                            r2 = (norm(B)^2);                             % distance b/w mic loc and slice center
+                            theta=acosd(dot(A,B)/(norm(A)*norm(B)));      % even here there would be some angle as nozzle centerline and vehicle skin are D/2 distance apart.
+                            BS=[Length/2,0,0]- X;                         % ??? WHAT IS THIS ?
+                          elseif X_mag>x2
+                            A=[(X_mag-x2)*cosd(angle) 0 (-x2+((X_mag-x2)*sind(angle)))] -[0 0 -x2];
+                            B=mic_locations(x1,:)-[(X_mag-x2)*cosd(angle) 0 (-x2+((X_mag-x2)*sind(angle)))];
+                            vec = norm(B);
+                            r2 = (norm(B)^2);
+                            theta=acosd(dot(A,B)/(norm(A)*norm(B)));
+                            BS=[Length/2,0,0]-[(X_mag-x2)*cosd(angle) 0 (-x2+((X_mag-x2)*sind(angle)))]; 
+                          
+                        end
+
+              
+                        for i = 1:nf
+                            Atm(x1,i) = (alpha_atm(i)*vec/1000);
+                        end
+
+                        
+                        theta1=[theta1,theta];
+                        Theta=ones(1,nf).*theta;
+                        theta_BS = acosd(dot(A,BS)/(norm(A)*norm(BS))); % angle b/w A vector and BS vector
+                        Theta_B=[Theta_B,theta_BS];
+
+                        if theta<theta_BS
+      
+                             SPLsbp=Lwsb-10*log10(4*pi*r2)+surffit1((Theta),(stn)) -Atm(x1,:) ;
+                            
+                        else 
+      
+                              SPLsbp=Lwsb-10*log10(4*pi*r2)+surffit1((Theta),(stn)) -Atm(x1,:) ;
+                            
+                        end
+                                toSPL=toSPL+(10.^(SPLsbp./10));
+                                
+    end
+ SPLbp=10*log10(toSPL);
+ for i=2:nf
+     SPL_A_corr(i)=SPLbp(i)+(dba_corr_func(f(i)));
+ end
+
+        SPL=[(SPL);SPLbp];
+        totSPLbp=sum(10.^(SPL_A_corr./10));
+        SPLOA_1=10*log10(totSPLbp);
+        SPLOA=[(SPLOA);SPLOA_1];
+        OASPL = mean(SPLOA');
+end
+
+%% 
+
+figure
+
+
+
+SPLOA_deluge = SPLOA - 15;
+x = size(X_cord,1);
+SPLOA_2 = reshape(SPLOA,x,x);
+X2 = fliplr(X_cord);
+minLevel = floor(min(SPLOA_2(:))/4)*4;  % round down to nearest 15
+maxLevel = ceil(max(SPLOA_2(:))/4)*4;   % round up to nearest 15
+levels = minLevel:4:maxLevel;            % contour levels vector
+
+% --- plot contours ---
+X_distance = X2./1000;
+Y_distance = Y_cord./1000;
+
+mapImg = imread("four_km.png");   % <-- your map image
+
+% Define map extents in km (MATCH your contour coordinate system)
+xMin = min(X_distance(:));
+xMax = max(X_distance(:));
+yMin = min(Y_distance(:));
+yMax = max(Y_distance(:));
+
+imagesc([xMin xMax], [yMin yMax], flipud(mapImg))
+axis xy
+axis equal
+hold on
+
+[C,h] = contour(X_distance, Y_distance, SPLOA_2, levels, ...
+    'LineWidth', 0.5, ...
+    'LineColor', 'w');
+hold on
+
+labels = clabel(C, h, ...
+    'Color', 'w', ...
+    'FontWeight', 'bold', ...
+    'FontSize', 9);
+
+set(labels,'BackgroundColor','k','Margin',1)
+
+
+%% 
+figure
+
+
+
+SPLOA_deluge = SPLOA - 15;
+x = size(X_cord,1);
+SPLOA_2 = reshape(SPLOA,x,x);
+X2 = fliplr(X_cord);
+minLevel = floor(min(SPLOA_2(:))/4)*4;  % round down to nearest 15
+maxLevel = ceil(max(SPLOA_2(:))/4)*4;   % round up to nearest 15
+levels = minLevel:4:maxLevel;            % contour levels vector
+
+% --- plot contours ---
+X_distance = X2./1000;
+Y_distance = Y_cord./1000;
+
+mapImg = imread("four_km.png");   % <-- your map image
+
+% Define map extents in km (MATCH your contour coordinate system)
+xMin = min(X_distance(:));
+xMax = max(X_distance(:));
+yMin = min(Y_distance(:));
+yMax = max(Y_distance(:));
+
+imagesc([xMin xMax], [yMin yMax], flipud(mapImg))
+axis xy
+axis equal
+hold on
+
+[C,h] = contour(X_distance, Y_distance, SPLOA_2, levels, ...
+    'LineWidth', 0.5, ...
+    'LineColor', 'w');
+hold on
+
+labels = clabel(C, h, ...
+    'Color', 'w', ...
+    'FontWeight', 'bold', ...
+    'FontSize', 9);
+
+set(labels,'BackgroundColor','k','Margin',1)
+
+% [C,h] = contour(X_distance, Y_distance, SPLOA_2, levels, ...
+%     "ShowText","on", ...
+%     "LabelFormat","%d dB", ...
+%     'LineWidth',0.5, ...
+%     'LineColor','w');
+% 
+% % Force contour labels to white
+% labels = findall(h,'Type','text');
+% set(labels,'Color','w','FontWeight','bold')
+
+% Plot only the 110 dB contour, bold and red
+contour(X_distance, Y_distance, SPLOA_2, [112 112], ...
+    'LineWidth', 2, ...
+    'LineColor', 'r');
+
+hold off
+xlabel("X (in km)")
+ylabel("Y (in km)")
+
+hold on
+
+plot(0, 0, 'o', 'MarkerFaceColor', 'b', 'MarkerEdgeColor', 'b', 'MarkerSize', 8)
+%title("Agnibaan 19 Engines acoustics corridor with atmospheric losses(A weighted) with 15dB water suppression + duct")
+
+hold off
+
+
+%% 
+
+
+figure("Name","final")
+
+
+x = size(X_cord,1);
+SPLOA_2 = reshape(SPLOA,x,x);
+
+% Flip X if needed
+X2 = fliplr(X_cord);
+
+% Define contour levels
+minLevel = floor(min(SPLOA_2(:))/5)*5;  % round down to nearest 5
+maxLevel = ceil(max(SPLOA_2(:))/5)*5;   % round up to nearest 5
+levels = minLevel:5:maxLevel;
+
+% Load original background map
+bgimage1 = imread('map5.png');
+
+% Display the original map (no scaling)
+figure
+imshow(bgimage1)
+hold on
+
+% Get image size
+[imgRows, imgCols, ~] = size(bgimage1);
+
+% Map contour X and Y to image pixel coordinates
+% Assuming X2 and Y_cord are in the same extent as your desired map region
+% Scale X2/Y_cord to image pixels
+X_pix = (X2 - min(X2(:))) / (max(X2(:)) - min(X2(:))) * (imgCols-1) + 1;
+Y_pix = (Y_cord - min(Y_cord(:))) / (max(Y_cord(:)) - min(Y_cord(:))) * (imgRows-1) + 1;
+
+% Because image y-axis is top-down, invert Y
+Y_pix = imgRows - Y_pix + 1;
+
+% Plot contour in pixel coordinates
+[C,h] = contour(X_pix, Y_pix, SPLOA_2, levels, ...
+    "ShowText", "on", ...
+    "LabelFormat", "%d dB", ...
+    'LineWidth', 0.5, ...
+    'LineColor', 'w');
+
+% Optional: add contour labels
+clabel(C,h,'Color','w','FontWeight','bold','FontSize',8);
+
+% Highlight a specific contour (e.g., 140 dB)
+contour(X_pix, Y_pix, SPLOA_2, [140 140], 'LineWidth',2, 'LineColor','r');
+
+% Mark the origin at pixel corresponding to (0,0) in X2/Y_cord
+x0_pix = (0 - min(X2(:))) / (max(X2(:)) - min(X2(:))) * (imgCols-1) + 1;
+y0_pix = (0 - min(Y_cord(:))) / (max(Y_cord(:)) - min(Y_cord(:))) * (imgRows-1) + 1;
+y0_pix = imgRows - y0_pix + 1;  % invert y-axis
+
+plot(x0_pix, y0_pix,'bo','MarkerFaceColor','b','MarkerSize',8);
+text(x0_pix, y0_pix+10,"Origin",'FontWeight','bold','Color','w');
+
+hold off
+title('Contour overlay on original map')
+
+
+
+
+
+
+
+%% 
+
+
+figure("Name","OASPL");
+plot(mic_locations(:,1),SPLOA,'*','LineWidth',2,'MarkerSize',10,'MarkerEdgeColor','r',"MarkerIndices",1:5:109);
+grid on;
+grid minor;
+xlabel('Location of the study points(m)');
+ylabel('OASPL (dB)');
+title('Overall Sound Pressure Level');
+%figure("Name","OASPL Contour")
+%% 
+
+
+
+
+lat0 = 12.7942;
+lon0 = 80.1892;
+
+% Define radius in degrees (approx 1 km ≈ 1/111 degrees)
+radius_km = 1;
+deg_offset = radius_km / 111;
+
+latlim = [lat0 - deg_offset, lat0 + deg_offset];
+lonlim = [lon0 - deg_offset, lon0 + deg_offset];
+
+% Create map
+%figure
+gx = geoaxes;
+geobasemap(gx, 'satellite')  % Or 'streets', 'topographic', etc.
+geolimits(gx, latlim, lonlim)
+
+% Plot your location
+hold(gx, 'on')
+geoplot(gx, lat0, lon0, 'ro', 'MarkerSize', 10, 'LineWidth', 2)
+title('1 km Radius Around 12°47′39″N, 80°11′21″E')
+
+% Optional: Draw a 1 km circle
+theta = linspace(0, 2*pi, 100);
+R = radius_km / 111;
+circle_lat = lat0 + R * cos(theta);
+circle_lon = lon0 + R * sin(theta) ./ cosd(lat0);
+geoplot(gx, circle_lat, circle_lon, 'b-', 'LineWidth', 1.5)
+
+%hold on
+%% 
+figure("Name","SPLOA")
+x = size(X,1);
+SPLOA_2 = reshape(SPLOA,x,x);
+[i,o] = contour(X,Y,SPLOA_2,30:10:130,"ShowText","on","LabelFormat","%d dB");
+%colormap("jet")
+colorbar
+o.LineWidth = 0.5;
+ax = gca;  % Get current axes
+ax.XMinorTick = 'on';
+ax.YMinorTick = 'on';
+xlabel("X (in m)");
+ylabel("Y (in m)");
+title("OASPL on a 2D plane")
+hold on
+plot(0,0,"o","MarkerFaceColor","b")
+text(20,0,"origin","FontWeight","bold")
+%% 
+figure("Name","final")
+
+SPLOA_deluge = SPLOA - 4;
+x = size(X_cord,1);
+SPLOA_2 = reshape(SPLOA,x,x);
+X2 = fliplr(X_cord);
+minLevel = floor(min(SPLOA_2(:))/5)*5;  % round down to nearest 15
+maxLevel = ceil(max(SPLOA_2(:))/5)*5;   % round up to nearest 15
+levels = minLevel:5:maxLevel;
+
+% x = size(X,1);
+% SPLOA_1 = reshape(SPLOA,x,x);
+% X2 = fliplr(X);
+bgimage = imread('map.png');
+[nRows, nCols] = size(SPLOA_1);
+
+
+X1 = X_cord(1,:);  % X vector for columns
+Y1 = Y_cord(:,1)';  % Y vector for rows
+
+% Display the image, scaled to real-world coordinates
+imshow(bgimage, 'XData', [X1(1) X(end)], 'YData', [Y1(1) Y1(end)])
+hold on
+
+% Since image y-axis is inverted, flip Y axis for contour plotting
+set(gca, 'YDir', 'normal')
+
+% Plot contour with X and Y coordinates
+[C, h] = contour(X2, Y_cord, SPLOA_2, "ShowText", "on", "LabelFormat", "%d dB", ...
+                 'LineWidth', 0.5, 'LineColor', 'w');
+
+% Add labels manually with white color
+clabel(C, h, 'Color', 'w', 'FontWeight', 'bold', 'FontSize', 8);
+axis on
+%title('Contour overlay on image with real coordinates')
+colormap(parula)
+hold on
+plot(0,0,"o","MarkerFaceColor","b")
+text(20,0,"origin","FontWeight","bold","Color","w")
+hold off
+
+
+
+
+%% 
+
+figure
+contour(X2, Y2, SPLOA_2, "ShowText", "on", "LabelFormat", "%d dB", ...
+                 'LineWidth', 0.5, 'LineColor', 'w');
+%% 
+
+
+% =======================
+%   Dynamic mapping
+% ====================
+
+
+
+% Origin coordinates
+%lat0 = 12.7942;
+%lon0 = 80.1892;
+
+lat0 = 12.7972;   % 12°47'50"N
+lon0 = 80.1881;   % 80°11'17"E
+
+% Define radius in degrees (approx 1 km ≈ 1/111 degrees)
+radius_km = 1;
+deg_offset = radius_km / 111;
+
+latlim = [lat0 - deg_offset, lat0 + deg_offset];
+lonlim = [lon0 - deg_offset, lon0 + deg_offset];
+
+% Create geo map
+figure("Name", "Final Contour on Satellite Map")
+gx = geoaxes;
+geobasemap(gx, 'streets-light');
+geolimits(gx, latlim, lonlim)
+hold(gx, 'on')
+
+% Plot center point and circle
+geoplot(gx, lat0, lon0, 'ro', 'MarkerSize', 10, 'LineWidth', 2)
+theta = linspace(0, 2*pi, 100);
+R = radius_km / 111;
+circle_lat = lat0 + R * cos(theta);
+circle_lon = lon0 + R * sin(theta) ./ cosd(lat0);
+geoplot(gx, circle_lat, circle_lon, 'b-', 'LineWidth', 1.5)
+
+% Prepare grid
+x = size(X_cord,1);
+SPLOA_1 = reshape(SPLOA, x, x);
+X1 = X_cord(1, :);       % X grid (meters)
+Y1 = Y_cord(:, 1)';      % Y grid (meters)
+X2 = fliplr(X1);
+
+% Convert X/Y to lat/lon grids
+[lonGrid, latGrid] = meshgrid( ...
+    lon0 + X1 / (111000 * cosd(lat0)), ...
+    lat0 + Y1 / 111000 );
+
+% Extract contour matrix (in grid units)
+contourLevels = 30:10:130;
+C = contourc(X2, Y1, SPLOA_1, contourLevels);
+
+% Parse and plot each contour line
+i = 1;
+while i < size(C,2)
+    level = C(1,i);
+    nPoints = C(2,i);
+    xSeg = C(1, i+1 : i+nPoints);
+    ySeg = C(2, i+1 : i+nPoints);
+
+    % Convert segment (xSeg, ySeg) to lat/lon
+    latSeg = lat0 + ySeg / 111000;
+    lonSeg = lon0 + xSeg ./ (111000 * cosd(lat0));
+
+    % Plot on geoaxes
+    geoplot(gx, latSeg, lonSeg, 'k-', 'LineWidth', 0.5)
+
+    i = i + nPoints + 1;
+end
+
+% Optional: mark origin
+geoplot(gx, lat0, lon0, 'bo', 'MarkerFaceColor', 'b')
+text(gx, lat0 + 0.0004, lon0, 'origin', 'Color', 'w', 'FontWeight', 'bold')
+
+title(gx, 'Acoustic Contour Overlay on Satellite Map')
+
+%% 
+
+% Origin coordinates
+lat0 = 12.4750;
+lon0 = 80.1117;
+
+% Define radius in degrees (approx 1 km ≈ 1/111 degrees)
+radius_km = 1;
+deg_offset = radius_km / 111;
+
+latlim = [lat0 - deg_offset, lat0 + deg_offset];
+lonlim = [lon0 - deg_offset, lon0 + deg_offset];
+
+% Create geo map
+figure("Name", "Final Contour on Satellite Map")
+gx = geoaxes;
+geobasemap(gx, 'satellite');
+geolimits(gx, latlim, lonlim)
+hold(gx, 'on')
+
+% Plot center point and circle
+geoplot(gx, lat0, lon0, 'ro', 'MarkerSize', 10, 'LineWidth', 2)
+% theta = linspace(0, 2*pi, 100);
+% R = radius_km / 111;
+% circle_lat = lat0 + R * cos(theta);
+% circle_lon = lon0 + R * sin(theta) ./ cosd(lat0);
+% geoplot(gx, circle_lat, circle_lon, 'b-', 'LineWidth', 1.5)
+
+% Prepare grid
+x = size(X,1);
+SPLOA_1 = reshape(SPLOA, x, x);
+X1 = X(1, :);       % X grid (meters)
+Y1 = Y(:, 1)';      % Y grid (meters)
+X2 = fliplr(X1);    % Flip for correct orientation
+
+% Convert X/Y to lat/lon grids
+% [lonGrid, latGrid] = meshgrid( ...
+%     lon0 + X1 / (111000 * cosd(lat0)), ...
+%     lat0 + Y1 / 111000 );
+
+% Extract contour matrix
+contourLevels = 30:10:130;
+C = contourc(X2, Y1, SPLOA_1, contourLevels);
+
+% Plot each contour segment with labels
+i = 1;
+while i < size(C,2)
+    level = C(1,i);
+    nPoints = C(2,i);
+    xSeg = C(1, i+1 : i+nPoints);
+    ySeg = C(2, i+1 : i+nPoints);
+
+    % Convert segment to lat/lon
+    latSeg = lat0 + ySeg / 111000;
+    lonSeg = lon0 + xSeg ./ (111000 * cosd(lat0));
+
+    % Plot line
+    geoplot(gx, latSeg, lonSeg, 'w-', 'LineWidth', 0.5)
+
+    % Plot label at midpoint
+    midIdx = round(nPoints / 2);
+    latMid = latSeg(midIdx);
+    lonMid = lonSeg(midIdx);
+    labelText = sprintf('%d dB', round(level));
+
+    text(gx, latMid, lonMid, labelText, ...
+        'Color', 'w', 'FontSize', 8, 'FontWeight', 'bold', ...
+        'HorizontalAlignment', 'center', ...
+        'VerticalAlignment', 'middle')
+
+    i = i + nPoints + 1;
+end
+
+% Optional: mark origin
+geoplot(gx, lat0, lon0, 'bo', 'MarkerFaceColor', 'b')
+%text(gx, lat0 + 0.0004, lon0, 'origin', 'Color', 'w', 'FontWeight', 'bold')
+title(gx, 'Acoustic Contour Overlay on Satellite Map')
+
+%% 
+
+%% Figure
+figure("Name","final")
+
+% Adjust SPL data
+SPLOA_deluge = SPLOA - 4;
+x = size(X_cord,1);
+SPLOA_2 = reshape(SPLOA,x,x);
+
+% Flip X if needed
+X2 = fliplr(X_cord);
+
+% Define contour levels
+minLevel = floor(min(SPLOA_2(:))/5)*5;  % round down to nearest 5
+maxLevel = ceil(max(SPLOA_2(:))/5)*5;   % round up to nearest 5
+levels = minLevel:5:maxLevel;
+
+% Load background map
+bgimage1 = imread('map1.png');
+
+% Real-world coordinates of image corners
+X1 = X_cord(1,:);       % X vector for columns (km)
+Y1 = Y_cord(:,1)';      % Y vector for rows (km)
+
+% Display map using imagesc
+figure
+imagesc(X1([1 end]), Y1([1 end]), bgimage1)
+axis xy        % flip y-axis so coordinates match contour
+axis equal
+hold on
+
+% Plot contour over the image
+[C,h] = contour(X2, Y_cord, SPLOA_2, levels, ...
+    "ShowText", "on", ...
+    "LabelFormat", "%d dB", ...
+    'LineWidth', 0.5, ...
+    'LineColor', 'w');
+
+% Optional: add contour labels
+clabel(C,h,'Color','w','FontWeight','bold','FontSize',8);
+
+% Highlight a specific contour (e.g., 140 dB)
+contour(X2, Y_cord, SPLOA_2, [140 140], 'LineWidth',2, 'LineColor','r');
+
+% Mark the origin (0,0)
+plot(0,0,'bo','MarkerFaceColor','b','MarkerSize',8);
+text(0,0.5,"Origin",'FontWeight','bold','Color','w');
+
+% Labels and finishing touches
+xlabel('X (km)')
+ylabel('Y (km)')
+colormap(parula)
+title('Contour overlay on map.png')
+hold off
+%% 
+
